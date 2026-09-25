@@ -50,6 +50,12 @@ def setup_selectors_and_wait_time(monkeypatch):
     viewport.CSS_FULLSCREEN_PARENT = ".parent"
     viewport.CSS_FULLSCREEN_BUTTON = ".child"
 
+def not_fullscreen_exec(script, *args):
+    """execute_script stub: page is NOT in fullscreen, screen.width is 1920."""
+    if "fullscreenElement" in script:
+        return False
+    return 1920
+
 def make_wdw_side_effects(results):
     """
     Create a fake “WebDriverWait(...).until(...)” object whose .until(...)
@@ -76,12 +82,13 @@ def test_successful_fullscreen_click(monkeypatch):
         {'width': 1920}
     ]
     # driver.execute_script("return screen.width") → 1920
-    driver.execute_script.return_value = 1920
+    driver.execute_script.side_effect = not_fullscreen_exec
 
     # WebDriverWait(driver, WAIT_TIME).until(...)  returns fake_parent, then fake_button
     fake_parent = MagicMock()
     fake_button = MagicMock()
-    wdw = make_wdw_side_effects([fake_parent, fake_button])
+    # third .until() is the post-click "did we really go fullscreen?" confirmation
+    wdw = make_wdw_side_effects([fake_parent, fake_button, True])
     monkeypatch.setattr(viewport, 'WebDriverWait', lambda drv, t: wdw)
 
     # ActionChains(driver) → a single ac_instance
@@ -119,11 +126,11 @@ def test_minimize_then_fullscreen(monkeypatch):
         {'width': 50},
         {'width': 1920}
     ]
-    driver.execute_script.return_value = 1920
+    driver.execute_script.side_effect = not_fullscreen_exec
 
     fake_parent = MagicMock()
     fake_button = MagicMock()
-    wdw = make_wdw_side_effects([fake_parent, fake_button])
+    wdw = make_wdw_side_effects([fake_parent, fake_button, True])
     monkeypatch.setattr(viewport, 'WebDriverWait', lambda drv, t: wdw)
 
     ac_instance = MagicMock()
@@ -156,7 +163,7 @@ def test_maximize_failure_non_maximized(monkeypatch):
         {'width': 150},
         {'width': 500}
     ]
-    driver.execute_script.return_value = 1920
+    driver.execute_script.side_effect = not_fullscreen_exec
 
     # Since the “window_rect < 0.9*screen_width” check raises WebDriverException,
     # we do NOT expect any WebDriverWait or ActionChains calls here.  If they get called,
@@ -188,7 +195,7 @@ def test_handle_fullscreen_already_maximized(monkeypatch):
     driver.get_window_rect.return_value = {"width": 50, "height": 50}
     driver.minimize_window.return_value = None
     driver.maximize_window.side_effect = WebDriverException("window already maximized")
-    driver.execute_script.return_value = 1920          # fake screen width
+    driver.execute_script.side_effect = not_fullscreen_exec
 
     # Skip real sleeps
     monkeypatch.setattr(viewport.time, "sleep", lambda *_: None)
@@ -243,7 +250,7 @@ def test_maximize_failure_already_maximized(monkeypatch):
         {'width': 150},
         Exception("already maximized")
     ]
-    driver.execute_script.return_value = 1920
+    driver.execute_script.side_effect = not_fullscreen_exec
 
     # If we ever reach the “button‐click” logic, that’s wrong.  Force pytest.skip
     monkeypatch.setattr(viewport, 'WebDriverWait', lambda drv, t: pytest.skip("Should not reach button logic"))
@@ -280,7 +287,7 @@ def test_button_click_failure(monkeypatch):
         {'width': 150},
         {'width': 1920}
     ]
-    driver.execute_script.return_value = 1920
+    driver.execute_script.side_effect = not_fullscreen_exec
 
     # WebDriverWait for “parent” returns a real fake_parent
     # On the second WebDriverWait call (child button), we force an Exception()
@@ -308,3 +315,65 @@ def test_button_click_failure(monkeypatch):
     # “Fullscreen button click failed” branch
     assert any("Fullscreen button click failed" in err for err in errors)
     assert statuses == ["Fullscreen click failed"]
+
+# --------------------------------------------------------------------------- # 
+# Already in fullscreen → return True without touching the window or the button
+# (a second click on UniFi's button would toggle fullscreen OFF)
+# --------------------------------------------------------------------------- # 
+def test_fullscreen_already_active_skips_click(monkeypatch):
+    driver = MagicMock()
+    driver.execute_script.side_effect = lambda script, *a: True if "fullscreenElement" in script else 1920
+
+    monkeypatch.setattr(viewport, 'WebDriverWait', lambda drv, t: pytest.skip("Should not reach button logic"))
+    monkeypatch.setattr(viewport, 'ActionChains', lambda drv: pytest.skip("Should not reach button logic"))
+
+    assert viewport.handle_fullscreen_button(driver) is True
+    driver.maximize_window.assert_not_called()
+
+# --------------------------------------------------------------------------- # 
+# Button clicked but document.fullscreenElement never became set → False
+# --------------------------------------------------------------------------- # 
+def test_fullscreen_click_not_confirmed(monkeypatch):
+    from selenium.common.exceptions import TimeoutException
+    driver = MagicMock()
+    driver.get_window_rect.side_effect = [{'width': 150}, {'width': 1920}]
+    driver.execute_script.side_effect = not_fullscreen_exec
+
+    fake_parent, fake_button = MagicMock(), MagicMock()
+    wdw = make_wdw_side_effects([fake_parent, fake_button])
+    def until_or_timeout(cond):
+        if wdw._seq:
+            return wdw._seq.pop(0)
+        raise TimeoutException("still not fullscreen")
+    wdw.until = until_or_timeout
+    monkeypatch.setattr(viewport, 'WebDriverWait', lambda drv, t: wdw)
+
+    ac_instance = MagicMock()
+    monkeypatch.setattr(viewport, 'ActionChains', lambda drv: ac_instance)
+
+    warns, statuses, errors = [], [], []
+    monkeypatch.setattr(viewport.logging, 'warning', lambda msg: warns.append(msg))
+    monkeypatch.setattr(viewport, 'api_status', lambda msg: statuses.append(msg))
+    monkeypatch.setattr(viewport, 'log_error', lambda msg, e=None, driver=None: errors.append(msg))
+
+    result = viewport.handle_fullscreen_button(driver)
+
+    assert result is False
+    assert ac_instance.click.call_count == 1
+    assert any("did not enter fullscreen" in w for w in warns)
+    assert statuses == ["Fullscreen not confirmed"]
+    assert errors == []
+
+# --------------------------------------------------------------------------- # 
+# is_fullscreen helper
+# --------------------------------------------------------------------------- # 
+@pytest.mark.parametrize("script_result, expected", [(True, True), (False, False), (None, False)])
+def test_is_fullscreen(script_result, expected):
+    driver = MagicMock()
+    driver.execute_script.return_value = script_result
+    assert viewport.is_fullscreen(driver) is expected
+
+def test_is_fullscreen_swallows_webdriver_error():
+    driver = MagicMock()
+    driver.execute_script.side_effect = WebDriverException("tab gone")
+    assert viewport.is_fullscreen(driver) is False

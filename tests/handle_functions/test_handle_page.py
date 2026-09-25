@@ -113,3 +113,43 @@ def test_handle_page_loops_then_dashboard(mock_sleep, mock_check_for_title, mock
     #   Inner sleep call gets a different MagicMock ID
     assert mock_sleep.call_count == 2
     assert mock_sleep.call_args_list == [call(3), call(3)]
+# --------------------------------------------------------------------------- # 
+# "UniFi Protect" is the title while the Protect app bootstraps (Protect 7.2+).
+# It must be treated as "still loading", not as an unexpected page.
+# --------------------------------------------------------------------------- # 
+class _IterTitleDriver:
+    """Returns titles[i] where i advances once per loop iteration (each sleep)."""
+    def __init__(self, titles):
+        self._titles = titles
+        self.i = 0
+    @property
+    def title(self):
+        return self._titles[min(self.i, len(self._titles) - 1)]
+
+@patch("viewport.handle_elements")
+@patch("viewport.handle_pause_banner")
+@patch("viewport.check_for_title")
+def test_handle_page_waits_through_protect_bootstrap(mock_check, mock_banner, mock_elements):
+    driver = _IterTitleDriver(["UniFi Protect", "UniFi Protect", "Dashboard | Protect"])
+    viewport.WAIT_TIME = 1
+    def advance(_s):
+        driver.i += 1
+    # start_time=0, then 3s elapsed on both "UniFi Protect" iterations:
+    # past WAIT_TIME*2 (the old limit) but within WAIT_TIME*4
+    with patch("viewport.time.sleep", side_effect=advance), \
+         patch("viewport.time.time", side_effect=[0, 3, 3]):
+        assert viewport.handle_page(driver) is True
+    mock_elements.assert_called_once_with(driver)
+
+@patch("viewport.log_error")
+@patch("viewport.api_status")
+@patch("viewport.check_for_title")
+@patch("viewport.time.sleep", return_value=None)
+def test_handle_page_protect_bootstrap_eventually_times_out(mock_sleep, mock_check, mock_api, mock_log_error):
+    driver = MagicMock(title="UniFi Protect")
+    viewport.WAIT_TIME = 1
+    # 5s elapsed: beyond WAIT_TIME*4, so the timeout branch fires
+    with patch("viewport.time.time", side_effect=[0, 5, 5]):
+        assert viewport.handle_page(driver) is False
+    args, _ = mock_log_error.call_args
+    assert args[0] == "Unexpected page loaded. The page title is: UniFi Protect"

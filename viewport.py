@@ -322,6 +322,13 @@ def log_error(message, exception=None, driver=None):
     """
     if ERROR_LOGGING and exception:
         logging.exception(message)  # Logs the message with the stacktrace
+    elif exception:
+        # No stacktrace, but keep the exception type and its first line so the
+        # logfile still says *what* failed (e.g. which WebDriverWait timed out).
+        lines = str(exception).strip().splitlines()
+        detail = lines[0][:200] if lines else ""
+        suffix = f"{type(exception).__name__}: {detail}" if detail else type(exception).__name__
+        logging.error(f"{message} [{suffix}]")
     else:
         logging.error(message)  # Logs the message without any exception
     # Screenshot on error if driver is provided
@@ -1580,6 +1587,51 @@ def handle_loading_issue(driver):
             trouble_loading_start_time = None
         # Wait exactly 1 second before next instant check
         time.sleep(1)
+def is_fullscreen(driver):
+    """
+    Report whether the page is currently in Fullscreen-API fullscreen.
+
+    Args:
+        driver: Selenium WebDriver instance.
+
+    Returns:
+        bool: ``True`` if ``document.fullscreenElement`` is set.
+    """
+    try:
+        return bool(driver.execute_script("return document.fullscreenElement != null;"))
+    except WebDriverException:
+        return False
+def wait_for_liveview(driver):
+    """
+    Wait for the live-view grid to be present in the DOM.
+
+    Tries every selector in ``CSS_LIVEVIEW_WRAPPER`` (current and legacy
+    Protect class names) and, as a last resort, accepts a page that already
+    renders a ``<video>`` element. A Ubiquiti class rename therefore degrades
+    to video detection instead of failing every health check.
+
+    Args:
+        driver: Selenium WebDriver instance.
+
+    Returns:
+        str: The selector that matched, or ``"video"`` for the fallback.
+
+    Raises:
+        TimeoutException: Nothing resembling a live view appeared within
+        ``WAIT_TIME`` seconds.
+    """
+    selectors = CSS_LIVEVIEW_WRAPPER if isinstance(CSS_LIVEVIEW_WRAPPER, (list, tuple)) else [CSS_LIVEVIEW_WRAPPER]
+    def _present(d):
+        for sel in selectors:
+            if d.find_elements(By.CSS_SELECTOR, sel):
+                return sel
+        if d.execute_script("return document.querySelectorAll('video').length;"):
+            return "video"
+        return False
+    found = WebDriverWait(driver, WAIT_TIME).until(_present)
+    if found == "video":
+        logging.warning("Live view wrapper class not found; relying on <video> presence. Ubiquiti may have renamed it again.")
+    return found
 def handle_fullscreen_button(driver):
     """
     Click the live-view fullscreen button with robust window management.
@@ -1591,6 +1643,10 @@ def handle_fullscreen_button(driver):
         bool: True on success, False if the click fails.
     """
     try:
+        # Clicking the button while already in fullscreen would toggle it off
+        if is_fullscreen(driver):
+            logging.debug("Live view is already in fullscreen.")
+            return True
         # First ensure window is visible and maximized
         try:
             if driver.get_window_rect()['width'] < 100:  # Likely minimized
@@ -1629,6 +1685,13 @@ def handle_fullscreen_button(driver):
             actions.move_to_element(button)
             actions.click(button)
             actions.perform()
+            # Don't trust the click: confirm the page really went fullscreen
+            try:
+                WebDriverWait(driver, 5).until(lambda d: is_fullscreen(d))
+            except TimeoutException:
+                logging.warning("Clicked the fullscreen button but the page did not enter fullscreen.")
+                api_status("Fullscreen not confirmed")
+                return False
             logging.info("Fullscreen activated")
             api_status("Fullscreen restored")
             return True
@@ -1652,10 +1715,11 @@ def handle_login(driver):
     """
     try:
         # Clear and input username with explicit waits
-        username_field = WebDriverWait(driver, WAIT_TIME).until(
+        # The UniFi OS login bundle is several MB; give slow devices (Pi) more time
+        username_field = WebDriverWait(driver, WAIT_TIME * 2).until(
             EC.element_to_be_clickable((
                 By.CSS_SELECTOR,
-                'input[name^="user"]'      # any name that begins with "user"
+                'input[name^="user"], #login-username'   # name begins with "user", or UniFi OS id
             ))
         )
         handle_clear(driver, username_field)
@@ -1726,6 +1790,9 @@ def handle_page(driver):
         elif "Ubiquiti Account" in driver.title or "UniFi OS" in driver.title:
             logging.info("Log-in page found. Inputting credentials...")
             return handle_login(driver)
+        elif "UniFi Protect" in driver.title and time.time() - start_time <= WAIT_TIME * 4:
+            # Protect app still bootstrapping; title becomes "Dashboard" once loaded
+            pass
         elif time.time() - start_time > WAIT_TIME * 2:  # If timeout limit is reached
             log_error("Unexpected page loaded. The page title is: " + driver.title, None, driver=driver)
             api_status(f"Error Loading Page {driver.title}")
@@ -1934,16 +2001,12 @@ def handle_view(driver, url):
                     time.sleep(SLEEP_TIME / 2)
                     continue
                 retry_count = 0
-                # Check presence of the wrapper element for the live view page 
-                WebDriverWait(driver, WAIT_TIME).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, CSS_LIVEVIEW_WRAPPER))
-                )
+                # Check presence of the live view grid (any known wrapper class, or <video>)
+                wait_for_liveview(driver)
                 # Check and handle modal if present
                 handle_modal(driver)
-                # Attempt to keep the window maximized every loop
-                screen_size = driver.get_window_size()
-                if screen_size['width'] != driver.execute_script("return screen.width;") or \
-                    screen_size['height'] != driver.execute_script("return screen.height;"):
+                # Re-enter fullscreen whenever the page dropped out of it
+                if not is_fullscreen(driver):
                     logging.info("Attempting to make live-view fullscreen.")
                     handle_fullscreen_button(driver) \
                     or logging.warning("Failed to activate fullscreen, but continuing anyway.")
