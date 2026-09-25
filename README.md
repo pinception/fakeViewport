@@ -142,6 +142,14 @@ Tired of refreshing the Unifi store only to see the Viewport out of stock? Me to
    BROWSER_BINARY=/usr/bin/google-chrome-stable
    ```
 
+   ### Touch screens
+
+   On a touch screen, tapping a camera tile drags the tile around instead of enlarging the camera. Set `TOUCH_AS_MOUSE=True` in the `[Browser]` section to make a finger tap behave like a mouse click (tap once to enlarge, tap again to go back). Touch scrolling inside the UniFi UI is disabled while this is on.
+
+   ### Enhanced (H.265 / HEVC) encoding
+
+   Cameras set to **Enhanced** encoding stream HEVC, which stock Chromium and Firefox cannot decode on a Raspberry Pi ("Unable to Stream"). On a Raspberry Pi 5 you can install the HEVC-capable Chromium from [chromium-rpi-hevc](https://github.com/sslivins/chromium-rpi-hevc) and set `ENABLE_HEVC=True` in the `[Browser]` section. After startup the log states whether the browser reports HEVC support and whether it is hardware decoded. Otherwise keep the cameras on **Standard** (H.264) encoding.
+
 7. **Test and Run**
 
    ```bash

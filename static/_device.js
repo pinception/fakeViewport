@@ -231,6 +231,16 @@ export let configCache = {
         path: "browser.headless",
         format: (v, el) => formatTime.boolean(v, el),
       },
+      {
+        id: "touchAsMouse",
+        path: "browser.touch_as_mouse",
+        format: (v, el) => formatTime.boolean(v, el),
+      },
+      {
+        id: "enableHevc",
+        path: "browser.enable_hevc",
+        format: (v, el) => formatTime.boolean(v, el),
+      },
 
       // Logging Section
       {

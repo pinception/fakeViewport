@@ -32,6 +32,15 @@ from css_selectors import (
     CSS_CURSOR,
     CSS_CLOSE_BUTTON
 )
+# Chromium switches needed for HEVC (H.265) decoding. Taken from the launcher of
+# chromium-rpi-hevc (patched Chromium for Raspberry Pi 5); on other Chrome builds
+# they are harmless, HEVC is simply not advertised when there is no decoder.
+CHROMIUM_HEVC_FLAGS = [
+    "--enable-features=PlatformHEVCDecoderSupport",
+    "--disable-features=UseChromeOSDirectVideoDecoder",
+    "--disable-zero-copy",
+    "--disable-gpu-memory-buffer-video-frames",
+]
 # --------------------------------------------------------------------------- # 
 # Variable Declaration and file paths
 # --------------------------------------------------------------------------- # 
@@ -1081,6 +1090,13 @@ def browser_handler(url):
                     chrome_options.add_argument("--disable-gpu")
                     chrome_options.add_argument("--window-size=1920,1080")
                 chrome_options.add_argument("--start-maximized")
+                if TOUCH_AS_MOUSE:
+                    # Touch screens: no Touch Events API, so a finger tap becomes a
+                    # plain mouse click (enlarges a camera) instead of a tile drag.
+                    chrome_options.add_argument("--touch-events=disabled")
+                if ENABLE_HEVC:
+                    for flag in CHROMIUM_HEVC_FLAGS:
+                        chrome_options.add_argument(flag)
                 chrome_options.add_argument("--disable-infobars")
                 chrome_options.add_argument("--disable-translate")
                 chrome_options.add_argument("--no-default-browser-check")
@@ -1108,6 +1124,8 @@ def browser_handler(url):
                     opts.add_argument("--headless")
                     opts.add_argument("--width=1920")
                     opts.add_argument("--height=1080")
+                if TOUCH_AS_MOUSE:
+                    opts.set_preference("dom.w3c_touch_events.enabled", 0)
                 opts.set_preference("browser.shell.checkDefaultBrowser", False)
                 opts.set_preference("browser.startup.homepage_override.mstone", "ignore")
                 opts.set_preference("toolkit.telemetry.reportingpolicy.firstRun", False)
@@ -1307,6 +1325,54 @@ def check_for_title(driver, title=None):
         log_error(f"Error while waiting for title '{title}': ", e, driver)
         api_status(f"Error Waiting for Title '{title}'")
         return False
+def check_hevc_support(driver):
+    """
+    Log whether the browser reports it can decode HEVC (H.265).
+
+    Protect only streams cameras set to "Enhanced" encoding to browsers that
+    advertise HEVC support; otherwise it shows "Unable to Stream". Stock
+    Chromium and Firefox cannot decode HEVC on a Raspberry Pi, so this makes
+    it obvious from the logfile whether ``ENABLE_HEVC`` is actually working.
+
+    Args:
+        driver: Selenium WebDriver instance with a page loaded.
+
+    Returns:
+        bool: ``True`` if HEVC decoding is reported as supported.
+    """
+    try:
+        info = driver.execute_async_script("""
+            const done = arguments[arguments.length - 1];
+            const types = ['video/mp4; codecs="hvc1.1.6.L93.B0"',
+                           'video/mp4; codecs="hev1.1.6.L93.B0"'];
+            const mse = !!window.MediaSource && types.some(t => MediaSource.isTypeSupported(t));
+            if (!navigator.mediaCapabilities) {
+                done({supported: mse, powerEfficient: null});
+                return;
+            }
+            navigator.mediaCapabilities.decodingInfo({
+                type: 'media-source',
+                video: {contentType: types[0], width: 1920, height: 1080,
+                        bitrate: 4000000, framerate: 30}
+            }).then(r => done({supported: mse || r.supported, powerEfficient: r.powerEfficient}))
+              .catch(() => done({supported: mse, powerEfficient: null}));
+        """)
+    except Exception as e:
+        log_error("Could not check HEVC support: ", e, driver)
+        return False
+    if not info or not info.get("supported"):
+        logging.warning(
+            "Browser cannot decode HEVC (H.265). Cameras set to Enhanced encoding will show "
+            "'Unable to Stream'. ENABLE_HEVC needs a Chromium build with HEVC support "
+            "(e.g. chromium-rpi-hevc on a Raspberry Pi 5)."
+        )
+        api_status("HEVC not supported by browser")
+        return False
+    if info.get("powerEfficient"):
+        logging.info("Browser supports HEVC (H.265) with hardware decoding.")
+    else:
+        logging.warning("Browser supports HEVC (H.265) but only in software; expect high CPU usage.")
+    return True
 def check_unable_to_stream(driver):
     """
     Detect an “Unable to Stream” message in the page’s DOM.
@@ -1941,6 +2007,7 @@ def handle_view(driver, url):
     # set iteration_counter so that after `boundary_loops` loops we hit the log
     iteration_counter = log_interval_iterations - boundary_loops
     if handle_page(driver):
+        if ENABLE_HEVC: check_hevc_support(driver)
         logging.info(f"Checking health of page every {SLEEP_TIME} seconds...")
     else:
         log_error("Error loading the live view. Restarting the program.", None, driver=driver)

@@ -76,6 +76,8 @@ def test_strict_mode_exits_on_missing(tmp_path):
 @pytest.mark.parametrize("ini_overrides, expected_msg", [
     ({"WAIT_TIME":"string"},      "General.WAIT_TIME must be a valid integer"),
     ({"HEADLESS":"string"},       "Browser.HEADLESS must be a valid boolean"),
+    ({"TOUCH_AS_MOUSE":"string"}, "Browser.TOUCH_AS_MOUSE must be a valid boolean"),
+    ({"ENABLE_HEVC":"string"},    "Browser.ENABLE_HEVC must be a valid boolean"),
     ({"BROWSER_PROFILE_PATH":"/home/your-user/foo"}, "placeholder value 'your-user'"),
     ({"RESTART_TIMES":"99:99"},     "Invalid RESTART_TIME: '99:99'"),
 ])
@@ -371,3 +373,21 @@ def test_print_and_strict_logs_and_exits(tmp_path, caplog):
 
     assert exc.value.code == 1
     assert any("SECRET is specified but empty." in r.message for r in caplog.records)
+# --------------------------------------------------------------------------- #
+# TOUCH_AS_MOUSE / ENABLE_HEVC: optional booleans that default to False
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("key", ["TOUCH_AS_MOUSE", "ENABLE_HEVC"])
+@pytest.mark.parametrize("ini_overrides, expected", [
+    (None, False),
+    ("True", True),
+    ("false", False),
+])
+def test_optional_browser_booleans(tmp_path, key, ini_overrides, expected):
+    write_base(tmp_path, ini_overrides=None if ini_overrides is None else {key: ini_overrides})
+    cfg = validate_config(strict=False,
+                          config_file=tmp_path / "config.ini",
+                          env_file=tmp_path / ".env",
+                          logs_dir=tmp_path / "logs",
+                          api_dir=tmp_path / "api")
+    assert cfg is not False
+    assert getattr(cfg, key) is expected

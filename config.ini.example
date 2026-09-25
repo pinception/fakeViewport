@@ -29,6 +29,15 @@ BROWSER_BINARY=/usr/bin/google-chrome-stable
 
 # Run in headless mode (True/False). Useful only for testing.
 # HEADLESS=True
+
+# Touch screens: treat a finger tap as a mouse click, so tapping a camera enlarges it
+# instead of dragging the tile around. Disables touch scrolling inside the UniFi UI.
+# TOUCH_AS_MOUSE=True
+
+# Chromium only: launch with the switches needed to play cameras set to "Enhanced"
+# (H.265 / HEVC) encoding. Stock Chromium cannot decode HEVC on a Raspberry Pi; this
+# needs a HEVC-capable build such as chromium-rpi-hevc on a Raspberry Pi 5.
+# ENABLE_HEVC=True
 [Logging]
 # Enable writing to logfile and/or console.
 LOG_FILE=True

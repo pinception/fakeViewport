@@ -578,6 +578,8 @@ def create_app():
                         "profile_path": getattr(_mon, "BROWSER_PROFILE_PATH", None),
                         "binary_path": getattr(_mon, "BROWSER_BINARY", None),
                         "headless": getattr(_mon, "HEADLESS", None),
+                        "touch_as_mouse": getattr(_mon, "TOUCH_AS_MOUSE", None),
+                        "enable_hevc": getattr(_mon, "ENABLE_HEVC", None),
                     },
                     "logging": {
                         "log_file_flag": getattr(_mon, "LOG_FILE_FLAG", None),

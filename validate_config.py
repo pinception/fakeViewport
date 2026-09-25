@@ -21,6 +21,8 @@ class AppConfig:
     BROWSER_PROFILE_PATH: str
     BROWSER_BINARY: str
     HEADLESS: bool
+    TOUCH_AS_MOUSE: bool
+    ENABLE_HEVC: bool
     BROWSER: str
     # Logging
     LOG_FILE_FLAG: bool
@@ -241,6 +243,8 @@ def validate_config(
     profile_path = safe_str(config, 'Browser', 'BROWSER_PROFILE_PATH', default_profile, errors, ['your-user'])
     binary = safe_str(config, 'Browser', 'BROWSER_BINARY', '/usr/bin/google-chrome', errors)
     headless = safe_bool(config, 'Browser', 'HEADLESS', False, errors)
+    touch_as_mouse = safe_bool(config, 'Browser', 'TOUCH_AS_MOUSE', False, errors)
+    enable_hevc = safe_bool(config, 'Browser', 'ENABLE_HEVC', False, errors)
     browser = (
         'firefox' if 'firefox' in binary.lower() else
         'chromium' if 'chromium' in binary.lower() else
@@ -294,6 +298,8 @@ def validate_config(
         BROWSER_PROFILE_PATH=profile_path,
         BROWSER_BINARY=binary,
         HEADLESS=headless,
+        TOUCH_AS_MOUSE=touch_as_mouse,
+        ENABLE_HEVC=enable_hevc,
         BROWSER=browser,
         LOG_FILE_FLAG=log_file_flag,
         LOG_CONSOLE=log_console,

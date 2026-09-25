@@ -384,3 +384,59 @@ def test_cached_driver_path_is_reused(monkeypatch, tmp_path, browser):
     # Assert
     assert result is dummy_driver, "Handler did not return the created driver"
     assert spy_get_driver.call_count == 0, "get_driver_path() should NOT be called"
+
+
+# --------------------------------------------------------------------------- #
+# TOUCH_AS_MOUSE / ENABLE_HEVC → extra Chrome switches / Firefox prefs
+# --------------------------------------------------------------------------- #
+def _launch_stubs(monkeypatch, browser, touch_as_mouse=False, enable_hevc=False):
+    monkeypatch.setattr(viewport, "BROWSER", browser)
+    monkeypatch.setattr(viewport, "HEADLESS", False)
+    monkeypatch.setattr(viewport, "TOUCH_AS_MOUSE", touch_as_mouse)
+    monkeypatch.setattr(viewport, "ENABLE_HEVC", enable_hevc)
+    monkeypatch.setattr(viewport, "MAX_RETRIES", 3)
+    monkeypatch.setattr(viewport, "SLEEP_TIME", 1)
+    monkeypatch.setattr(viewport, "BROWSER_BINARY", "/fake/browser")
+    monkeypatch.setattr(viewport, "BROWSER_PROFILE_PATH", "/fake/profile")
+    monkeypatch.setattr(viewport, "driver_path", None, raising=False)
+    monkeypatch.setattr(viewport, "get_driver_path", lambda *a, **k: "/fake/driver")
+    monkeypatch.setattr(viewport, "process_handler", MagicMock())
+    monkeypatch.setattr(viewport, "restart_handler", MagicMock())
+    monkeypatch.setattr(viewport, "api_status", MagicMock())
+    monkeypatch.setattr(viewport.time, "sleep", lambda s: None)
+
+def _chrome_args(monkeypatch, **flags):
+    _launch_stubs(monkeypatch, "chromium", **flags)
+    opts = MagicMock()
+    monkeypatch.setattr(viewport, "Options", lambda: opts)
+    monkeypatch.setattr(viewport, "Service", lambda path: MagicMock())
+    monkeypatch.setattr(viewport.webdriver, "Chrome", lambda service, options: MagicMock())
+    assert viewport.browser_handler("http://example.com") is not None
+    return [c.args[0] for c in opts.add_argument.call_args_list]
+
+@pytest.mark.parametrize("touch_as_mouse", [True, False])
+def test_browser_handler_chrome_touch_as_mouse_flag(monkeypatch, touch_as_mouse):
+    args = _chrome_args(monkeypatch, touch_as_mouse=touch_as_mouse)
+    assert ("--touch-events=disabled" in args) is touch_as_mouse
+    assert "--start-maximized" in args
+
+@pytest.mark.parametrize("enable_hevc", [True, False])
+def test_browser_handler_chrome_hevc_flags(monkeypatch, enable_hevc):
+    args = _chrome_args(monkeypatch, enable_hevc=enable_hevc)
+    for flag in viewport.CHROMIUM_HEVC_FLAGS:
+        assert (flag in args) is enable_hevc
+    # only one --enable-features switch: Chromium keeps just the last one it sees
+    assert sum(a.startswith("--enable-features=") for a in args) == (1 if enable_hevc else 0)
+
+@pytest.mark.parametrize("touch_as_mouse", [True, False])
+def test_browser_handler_firefox_touch_as_mouse_pref(monkeypatch, touch_as_mouse):
+    _launch_stubs(monkeypatch, "firefox", touch_as_mouse=touch_as_mouse)
+    opts = MagicMock()
+    monkeypatch.setattr(viewport, "FirefoxOptions", lambda: opts)
+    monkeypatch.setattr(viewport, "FirefoxService", lambda executable_path: MagicMock())
+    monkeypatch.setattr(viewport.webdriver, "Firefox", lambda service, options: MagicMock())
+
+    assert viewport.browser_handler("http://example.com") is not None
+
+    prefs = [c.args for c in opts.set_preference.call_args_list]
+    assert (("dom.w3c_touch_events.enabled", 0) in prefs) is touch_as_mouse
