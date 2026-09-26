@@ -34,9 +34,9 @@ BROWSER_BINARY=/usr/bin/google-chrome-stable
 # instead of dragging the tile around. Disables touch scrolling inside the UniFi UI.
 # TOUCH_AS_MOUSE=True
 
-# Chromium only: launch with the switches needed to play cameras set to "Enhanced"
-# (H.265 / HEVC) encoding. Stock Chromium cannot decode HEVC on a Raspberry Pi; this
-# needs a HEVC-capable build such as chromium-rpi-hevc on a Raspberry Pi 5.
+# Chromium only: play cameras set to "Enhanced" (H.265 / HEVC) encoding. Works with
+# Raspberry Pi OS Chromium on a Raspberry Pi 5, and only on a Wayland (labwc) desktop
+# session: Chromium is then launched on Wayland. Under X11 its GPU process crashes.
 # ENABLE_HEVC=True
 [Logging]
 # Enable writing to logfile and/or console.

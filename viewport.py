@@ -32,9 +32,12 @@ from css_selectors import (
     CSS_CURSOR,
     CSS_CLOSE_BUTTON
 )
-# Chromium switches needed for HEVC (H.265) decoding. Taken from the launcher of
+# Chromium switches for HEVC (H.265) decoding. Taken from the launcher of
 # chromium-rpi-hevc (patched Chromium for Raspberry Pi 5); on other Chrome builds
 # they are harmless, HEVC is simply not advertised when there is no decoder.
+# Raspberry Pi OS Chromium decodes HEVC in hardware on a Pi 5 without them, but
+# only on native Wayland: under X11/Xwayland the GPU process cannot import the
+# decoded frames and crashes, and after 3 crashes Chrome drops HEVC altogether.
 CHROMIUM_HEVC_FLAGS = [
     "--enable-features=PlatformHEVCDecoderSupport",
     "--disable-features=UseChromeOSDirectVideoDecoder",
@@ -1051,6 +1054,21 @@ def process_handler(name, action="check"):
         log_error(f"Error while checking process '{name}'", e)
         api_status(f"Error Checking Process '{name}'")
         return False
+def find_wayland_display():
+    """
+    Locate the Wayland socket of the desktop session.
+
+    Uses ``WAYLAND_DISPLAY`` / ``XDG_RUNTIME_DIR`` when set, otherwise the
+    defaults a Raspberry Pi OS (labwc) session uses, since the script is
+    usually started from cron without them.
+
+    Returns:
+        tuple[str, str] | None: ``(runtime_dir, display_name)`` if the socket
+        exists, otherwise ``None``.
+    """
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    name = os.environ.get("WAYLAND_DISPLAY") or "wayland-0"
+    return (runtime_dir, name) if (Path(runtime_dir) / name).is_socket() else None
 def browser_handler(url):
     """
     Launch a fresh browser instance and navigate to *url*.
@@ -1097,6 +1115,17 @@ def browser_handler(url):
                 if ENABLE_HEVC:
                     for flag in CHROMIUM_HEVC_FLAGS:
                         chrome_options.add_argument(flag)
+                    wayland = find_wayland_display()
+                    if wayland:
+                        # Started from cron/systemd there is no WAYLAND_DISPLAY, so
+                        # Chromium would fall back to Xwayland (see CHROMIUM_HEVC_FLAGS).
+                        os.environ["XDG_RUNTIME_DIR"], os.environ["WAYLAND_DISPLAY"] = wayland
+                        chrome_options.add_argument("--ozone-platform=wayland")
+                    else:
+                        logging.warning(
+                            "ENABLE_HEVC: no Wayland session found. Under X11 the browser crashes its "
+                            "GPU process on the first HEVC frame; switch the desktop to Wayland (labwc)."
+                        )
                 chrome_options.add_argument("--disable-infobars")
                 chrome_options.add_argument("--disable-translate")
                 chrome_options.add_argument("--no-default-browser-check")
@@ -1330,9 +1359,11 @@ def check_hevc_support(driver):
     Log whether the browser reports it can decode HEVC (H.265).
 
     Protect only streams cameras set to "Enhanced" encoding to browsers that
-    advertise HEVC support; otherwise it shows "Unable to Stream". Stock
-    Chromium and Firefox cannot decode HEVC on a Raspberry Pi, so this makes
-    it obvious from the logfile whether ``ENABLE_HEVC`` is actually working.
+    advertise HEVC support; otherwise it shows "Unable to Stream". On a
+    Raspberry Pi 5 only Chromium on a Wayland session can decode HEVC, so this
+    makes it obvious from the logfile whether ``ENABLE_HEVC`` is actually
+    working. It runs once after start-up: a later GPU-process crash, which
+    also drops HEVC support, is not caught here.
 
     Args:
         driver: Selenium WebDriver instance with a page loaded.
@@ -1363,8 +1394,8 @@ def check_hevc_support(driver):
     if not info or not info.get("supported"):
         logging.warning(
             "Browser cannot decode HEVC (H.265). Cameras set to Enhanced encoding will show "
-            "'Unable to Stream'. ENABLE_HEVC needs a Chromium build with HEVC support "
-            "(e.g. chromium-rpi-hevc on a Raspberry Pi 5)."
+            "'Unable to Stream'. ENABLE_HEVC needs Chromium with HEVC support, e.g. "
+            "Raspberry Pi OS Chromium on a Raspberry Pi 5 running a Wayland (labwc) session."
         )
         api_status("HEVC not supported by browser")
         return False

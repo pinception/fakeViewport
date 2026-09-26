@@ -352,6 +352,8 @@ def test_cached_driver_path_is_reused(monkeypatch, tmp_path, browser):
 
     monkeypatch.setattr(viewport, "BROWSER", browser)
     monkeypatch.setattr(viewport, "validate_config", lambda *a, **k: True)
+    # unmocked, this SIGKILLs every real process with "chrome"/"firefox" in its cmdline
+    monkeypatch.setattr(viewport, "process_handler", MagicMock())
     monkeypatch.setattr(viewport, "api_status",     lambda *a, **k: None)
     monkeypatch.setattr(viewport, "time",           MagicMock(sleep=lambda _: None))
     monkeypatch.setattr(viewport, "restart_handler", MagicMock())
@@ -422,11 +424,64 @@ def test_browser_handler_chrome_touch_as_mouse_flag(monkeypatch, touch_as_mouse)
 
 @pytest.mark.parametrize("enable_hevc", [True, False])
 def test_browser_handler_chrome_hevc_flags(monkeypatch, enable_hevc):
+    monkeypatch.setattr(viewport, "find_wayland_display", lambda: None)
     args = _chrome_args(monkeypatch, enable_hevc=enable_hevc)
     for flag in viewport.CHROMIUM_HEVC_FLAGS:
         assert (flag in args) is enable_hevc
     # only one --enable-features switch: Chromium keeps just the last one it sees
     assert sum(a.startswith("--enable-features=") for a in args) == (1 if enable_hevc else 0)
+
+@pytest.mark.parametrize("enable_hevc", [True, False])
+def test_browser_handler_chrome_hevc_uses_wayland(monkeypatch, enable_hevc):
+    # browser_handler writes os.environ directly; keep that out of other tests
+    monkeypatch.setattr(viewport.os, "environ", {})
+    monkeypatch.setattr(viewport, "find_wayland_display", lambda: ("/run/user/1000", "wayland-0"))
+    args = _chrome_args(monkeypatch, enable_hevc=enable_hevc)
+    assert ("--ozone-platform=wayland" in args) is enable_hevc
+    # chromedriver hands its environment to Chromium, which needs the socket location
+    assert (viewport.os.environ.get("WAYLAND_DISPLAY") == "wayland-0") is enable_hevc
+    assert (viewport.os.environ.get("XDG_RUNTIME_DIR") == "/run/user/1000") is enable_hevc
+
+def test_browser_handler_chrome_hevc_without_wayland_warns(monkeypatch):
+    monkeypatch.setattr(viewport, "find_wayland_display", lambda: None)
+    warnings = []
+    monkeypatch.setattr(viewport.logging, "warning", lambda m: warnings.append(m))
+    args = _chrome_args(monkeypatch, enable_hevc=True)
+    assert "--ozone-platform=wayland" not in args
+    assert any("no Wayland session" in m for m in warnings)
+
+# --------------------------------------------------------------------------- #
+# find_wayland_display: env vars first, then the per-user default socket
+# --------------------------------------------------------------------------- #
+def _make_socket(path):
+    import socket
+    s = socket.socket(socket.AF_UNIX)
+    s.bind(str(path))
+    return s
+
+def test_find_wayland_display_from_env(monkeypatch, tmp_path):
+    sock = _make_socket(tmp_path / "wayland-1")
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    try:
+        assert viewport.find_wayland_display() == (str(tmp_path), "wayland-1")
+    finally:
+        sock.close()
+
+def test_find_wayland_display_default_socket(monkeypatch, tmp_path):
+    sock = _make_socket(tmp_path / "wayland-0")
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    try:
+        assert viewport.find_wayland_display() == (str(tmp_path), "wayland-0")
+    finally:
+        sock.close()
+
+def test_find_wayland_display_none(monkeypatch, tmp_path):
+    (tmp_path / "wayland-0").write_text("")  # a lock/plain file is not a socket
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    assert viewport.find_wayland_display() is None
 
 @pytest.mark.parametrize("touch_as_mouse", [True, False])
 def test_browser_handler_firefox_touch_as_mouse_pref(monkeypatch, touch_as_mouse):
