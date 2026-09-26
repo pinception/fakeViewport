@@ -580,6 +580,7 @@ def create_app():
                         "headless": getattr(_mon, "HEADLESS", None),
                         "touch_as_mouse": getattr(_mon, "TOUCH_AS_MOUSE", None),
                         "enable_hevc": getattr(_mon, "ENABLE_HEVC", None),
+                        "show_liveview_controls": getattr(_mon, "SHOW_LIVEVIEW_CONTROLS", None),
                     },
                     "logging": {
                         "log_file_flag": getattr(_mon, "LOG_FILE_FLAG", None),

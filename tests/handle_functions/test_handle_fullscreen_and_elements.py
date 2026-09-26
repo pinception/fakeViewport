@@ -30,6 +30,17 @@ def test_handle_elements_hides_cursor_and_player_options():
     # delay propagated
     assert delay == 3000
 
+def test_handle_liveview_controls_injects_style_once():
+    driver = MagicMock()
+    viewport.handle_liveview_controls(driver)
+
+    driver.execute_script.assert_called_once()
+    script, selector = driver.execute_script.call_args[0]
+    # idempotent: bails out when the style tag is already there
+    assert "getElementById('showLiveviewControlsStyle')" in script
+    assert "opacity: 1 !important" in script
+    assert selector == viewport.CSS_LIVEVIEW_CONTROLS
+
 @pytest.mark.parametrize("invocations", [1, 2, 3])
 def test_banner_script_always_injected(invocations):
     driver = MagicMock()

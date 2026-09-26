@@ -15,3 +15,6 @@ CSS_LIVEVIEW_WRAPPER = [
 CSS_PLAYER_OPTIONS = ["aeugT", "dzRoNo", "LiveViewGridSlot__PlayerOptions"]
 CSS_CURSOR = ["hMbAUy", "liveView__LiveViewWrapper", "liveview__ViewportsWrapper"]
 CSS_CLOSE_BUTTON = "button[class*='closeButton']"
+# Floating live-view toolbar (view switcher, stream quality, fullscreen).
+# Protect only shows it while hovered (opacity 0 -> 1 on :hover).
+CSS_LIVEVIEW_CONTROLS = "div[class*='LiveviewControls__LiveControlsContainer']"

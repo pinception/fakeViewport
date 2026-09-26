@@ -23,6 +23,7 @@ class AppConfig:
     HEADLESS: bool
     TOUCH_AS_MOUSE: bool
     ENABLE_HEVC: bool
+    SHOW_LIVEVIEW_CONTROLS: bool
     BROWSER: str
     # Logging
     LOG_FILE_FLAG: bool
@@ -245,6 +246,7 @@ def validate_config(
     headless = safe_bool(config, 'Browser', 'HEADLESS', False, errors)
     touch_as_mouse = safe_bool(config, 'Browser', 'TOUCH_AS_MOUSE', False, errors)
     enable_hevc = safe_bool(config, 'Browser', 'ENABLE_HEVC', False, errors)
+    show_liveview_controls = safe_bool(config, 'Browser', 'SHOW_LIVEVIEW_CONTROLS', False, errors)
     browser = (
         'firefox' if 'firefox' in binary.lower() else
         'chromium' if 'chromium' in binary.lower() else
@@ -300,6 +302,7 @@ def validate_config(
         HEADLESS=headless,
         TOUCH_AS_MOUSE=touch_as_mouse,
         ENABLE_HEVC=enable_hevc,
+        SHOW_LIVEVIEW_CONTROLS=show_liveview_controls,
         BROWSER=browser,
         LOG_FILE_FLAG=log_file_flag,
         LOG_CONSOLE=log_console,

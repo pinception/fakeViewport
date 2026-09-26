@@ -41,7 +41,9 @@ def write_base(tmp_path: Path, ini_overrides=None, env_overrides=None):
     ini = BASE_INI
     if ini_overrides:
         for key, val in ini_overrides.items():
-            ini = re.sub(rf"^{key}\s*=.*$", f"{key} = {val}", ini, flags=re.MULTILINE)
+            ini, n = re.subn(rf"^{key}\s*=.*$", f"{key} = {val}", ini, flags=re.MULTILINE)
+            if not n:  # optional key absent from BASE_INI (all of them live in [Browser])
+                ini = ini.replace("[Browser]\n", f"[Browser]\n{key} = {val}\n", 1)
     (tmp_path / "config.ini").write_text(ini)
 
     # write .env, allowing removal if override value is None
@@ -78,6 +80,7 @@ def test_strict_mode_exits_on_missing(tmp_path):
     ({"HEADLESS":"string"},       "Browser.HEADLESS must be a valid boolean"),
     ({"TOUCH_AS_MOUSE":"string"}, "Browser.TOUCH_AS_MOUSE must be a valid boolean"),
     ({"ENABLE_HEVC":"string"},    "Browser.ENABLE_HEVC must be a valid boolean"),
+    ({"SHOW_LIVEVIEW_CONTROLS":"string"}, "Browser.SHOW_LIVEVIEW_CONTROLS must be a valid boolean"),
     ({"BROWSER_PROFILE_PATH":"/home/your-user/foo"}, "placeholder value 'your-user'"),
     ({"RESTART_TIMES":"99:99"},     "Invalid RESTART_TIME: '99:99'"),
 ])
@@ -374,9 +377,9 @@ def test_print_and_strict_logs_and_exits(tmp_path, caplog):
     assert exc.value.code == 1
     assert any("SECRET is specified but empty." in r.message for r in caplog.records)
 # --------------------------------------------------------------------------- #
-# TOUCH_AS_MOUSE / ENABLE_HEVC: optional booleans that default to False
+# TOUCH_AS_MOUSE / ENABLE_HEVC / SHOW_LIVEVIEW_CONTROLS: optional booleans that default to False
 # --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("key", ["TOUCH_AS_MOUSE", "ENABLE_HEVC"])
+@pytest.mark.parametrize("key", ["TOUCH_AS_MOUSE", "ENABLE_HEVC", "SHOW_LIVEVIEW_CONTROLS"])
 @pytest.mark.parametrize("ini_overrides, expected", [
     (None, False),
     ("True", True),

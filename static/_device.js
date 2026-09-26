@@ -241,6 +241,11 @@ export let configCache = {
         path: "browser.enable_hevc",
         format: (v, el) => formatTime.boolean(v, el),
       },
+      {
+        id: "showLiveviewControls",
+        path: "browser.show_liveview_controls",
+        format: (v, el) => formatTime.boolean(v, el),
+      },
 
       // Logging Section
       {

@@ -30,7 +30,8 @@ from css_selectors import (
     CSS_LIVEVIEW_WRAPPER,
     CSS_PLAYER_OPTIONS,
     CSS_CURSOR,
-    CSS_CLOSE_BUTTON
+    CSS_CLOSE_BUTTON,
+    CSS_LIVEVIEW_CONTROLS
 )
 # Chromium switches for HEVC (H.265) decoding. Taken from the launcher of
 # chromium-rpi-hevc (patched Chromium for Raspberry Pi 5); on other Chrome builds
@@ -1498,6 +1499,28 @@ def handle_elements(driver, hide_delay_ms: int = 3000):
         CSS_PLAYER_OPTIONS,
         hide_delay_ms
     )
+def handle_liveview_controls(driver):
+    """
+    Keep Protect's live-view toolbar (view switcher, stream quality,
+    fullscreen) visible instead of only while it is hovered.
+
+    Without a mouse (touch screens, kiosks) the toolbar is otherwise never
+    seen. A page reload drops the injected style, so this is re-applied on
+    every health check.
+
+    Args:
+        driver: Selenium WebDriver instance.
+    """
+    driver.execute_script(
+        """
+        if (document.getElementById('showLiveviewControlsStyle')) return;
+        const s = document.createElement('style');
+        s.id = 'showLiveviewControlsStyle';
+        s.textContent = `${arguments[0]} { opacity: 1 !important; }`;
+        document.head.appendChild(s);
+        """,
+        CSS_LIVEVIEW_CONTROLS
+    )
 def handle_pause_banner(driver):
     """
     Inject a self-healing “Pause / Resume Health Checks” banner.
@@ -1882,6 +1905,7 @@ def handle_page(driver):
         if "Dashboard" in driver.title:
             time.sleep(3)
             handle_elements(driver)
+            if SHOW_LIVEVIEW_CONTROLS: handle_liveview_controls(driver)
             handle_pause_banner(driver)
             return True
         elif "Ubiquiti Account" in driver.title or "UniFi OS" in driver.title:
@@ -2110,6 +2134,7 @@ def handle_view(driver, url):
                     or logging.warning("Failed to activate fullscreen, but continuing anyway.")
                 handle_loading_issue(driver)
                 handle_elements(driver)     # Hides cursor and camera controls until mouse moves
+                if SHOW_LIVEVIEW_CONTROLS: handle_liveview_controls(driver)
                 handle_pause_banner(driver) # Injects a pause banner on mouse move
                 api_status("Feed Healthy")
                 # Check decoding errors

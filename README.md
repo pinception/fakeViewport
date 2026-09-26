@@ -146,6 +146,8 @@ Tired of refreshing the Unifi store only to see the Viewport out of stock? Me to
 
    On a touch screen, tapping a camera tile drags the tile around instead of enlarging the camera. Set `TOUCH_AS_MOUSE=True` in the `[Browser]` section to make a finger tap behave like a mouse click (tap once to enlarge, tap again to go back). Touch scrolling inside the UniFi UI is disabled while this is on.
 
+   The live view toolbar (view switcher, stream quality, fullscreen button) only appears while a mouse hovers over it, so a touch screen never shows it. Set `SHOW_LIVEVIEW_CONTROLS=True` in the `[Browser]` section to keep it on screen.
+
    ### Enhanced (H.265 / HEVC) encoding
 
    Cameras set to **Enhanced** encoding stream HEVC, which Firefox, and Chromium on most Raspberry Pis, cannot decode ("Unable to Stream"). On a Raspberry Pi 5, the Raspberry Pi OS Chromium (`BROWSER_BINARY=/usr/lib/chromium/chromium`) decodes HEVC in hardware; set `ENABLE_HEVC=True` in the `[Browser]` section. This needs a **Wayland** desktop session (labwc, the Raspberry Pi OS default; `sudo raspi-config` → Advanced Options → Wayland): under X11 the browser's GPU process crashes on the first HEVC frame, then drops HEVC support and every Enhanced camera shows "Your browser doesn't support Enhanced encoding". With `ENABLE_HEVC` on, Chromium is launched on Wayland automatically. After startup the log states whether the browser reports HEVC support and whether it is hardware decoded. Otherwise keep the cameras on **Standard** (H.264) encoding.

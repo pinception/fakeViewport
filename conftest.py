@@ -76,6 +76,7 @@ def provide_dummy_config(tmp_path_factory):
         HEADLESS=False,
         TOUCH_AS_MOUSE=False,
         ENABLE_HEVC=False,
+        SHOW_LIVEVIEW_CONTROLS=False,
         BROWSER="",
         # logging config
         LOG_FILE_FLAG=False,

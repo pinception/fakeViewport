@@ -1,3 +1,4 @@
+import pytest
 import viewport
 from unittest.mock import MagicMock, patch, call
 
@@ -20,6 +21,20 @@ def test_handle_page_dashboard_short_circuits(
     mock_check.assert_called_once_with(driver)
     mock_handle_elements.assert_called_once_with(driver)
     assert ret is True
+
+@pytest.mark.parametrize("show_controls", [True, False])
+def test_handle_page_dashboard_shows_liveview_controls(monkeypatch, show_controls):
+    driver = MagicMock(title="Dashboard Home")
+    monkeypatch.setattr(viewport, "SHOW_LIVEVIEW_CONTROLS", show_controls)
+    monkeypatch.setattr(viewport, "check_for_title", MagicMock())
+    monkeypatch.setattr(viewport, "handle_elements", MagicMock())
+    monkeypatch.setattr(viewport, "handle_pause_banner", MagicMock())
+    monkeypatch.setattr(viewport.time, "sleep", lambda s: None)
+    spy = MagicMock()
+    monkeypatch.setattr(viewport, "handle_liveview_controls", spy)
+
+    assert viewport.handle_page(driver) is True
+    assert spy.call_count == (1 if show_controls else 0)
 
 @patch("viewport.log_error")
 @patch("viewport.api_status")

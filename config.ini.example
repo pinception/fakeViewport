@@ -34,6 +34,10 @@ BROWSER_BINARY=/usr/bin/google-chrome-stable
 # instead of dragging the tile around. Disables touch scrolling inside the UniFi UI.
 # TOUCH_AS_MOUSE=True
 
+# Always show the live view toolbar (view switcher, stream quality, fullscreen).
+# Protect normally only shows it while the mouse hovers over it.
+# SHOW_LIVEVIEW_CONTROLS=True
+
 # Chromium only: play cameras set to "Enhanced" (H.265 / HEVC) encoding. Works with
 # Raspberry Pi OS Chromium on a Raspberry Pi 5, and only on a Wayland (labwc) desktop
 # session: Chromium is then launched on Wayland. Under X11 its GPU process crashes.
