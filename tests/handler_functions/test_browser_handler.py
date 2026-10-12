@@ -495,3 +495,23 @@ def test_browser_handler_firefox_touch_as_mouse_pref(monkeypatch, touch_as_mouse
 
     prefs = [c.args for c in opts.set_preference.call_args_list]
     assert (("dom.w3c_touch_events.enabled", 0) in prefs) is touch_as_mouse
+
+
+# --------------------------------------------------------------------------- #
+# ChromeDriver's default --enable-logging must be excluded, otherwise Chromium
+# writes an ever-growing chrome_debug.log into the profile directory.
+# --------------------------------------------------------------------------- #
+def test_browser_handler_chrome_excludes_debug_logging(monkeypatch):
+    _launch_stubs(monkeypatch, "chromium")
+    opts = MagicMock()
+    monkeypatch.setattr(viewport, "Options", lambda: opts)
+    monkeypatch.setattr(viewport, "Service", lambda path: MagicMock())
+    monkeypatch.setattr(viewport.webdriver, "Chrome", lambda service, options: MagicMock())
+
+    assert viewport.browser_handler("http://example.com") is not None
+
+    experimental = {c.args[0]: c.args[1] for c in opts.add_experimental_option.call_args_list}
+    excluded = experimental["excludeSwitches"]
+    assert "enable-logging" in excluded
+    assert "log-level" in excluded
+    assert "enable-automation" in excluded

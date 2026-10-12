@@ -1138,7 +1138,12 @@ def browser_handler(url):
                 chrome_options.add_argument("--hide-crash-restore-bubble")
                 chrome_options.add_argument("--remote-debugging-port=9222")
                 chrome_options.add_argument(f"--user-data-dir={BROWSER_PROFILE_PATH}")
-                chrome_options.add_experimental_option("excludeSwitches", ['enable-automation'])
+                # ChromeDriver always adds --enable-logging --log-level=0, which makes
+                # Chromium write every INFO message to <profile>/chrome_debug.log. That
+                # file is never rotated and grows for as long as the live view runs.
+                chrome_options.add_experimental_option(
+                    "excludeSwitches", ['enable-automation', 'enable-logging', 'log-level']
+                )
                 chrome_options.binary_location = BROWSER_BINARY
                 chrome_options.add_experimental_option("prefs", {
                     "credentials_enable_service": False,
