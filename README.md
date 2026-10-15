@@ -145,7 +145,39 @@ A low-cost alternative to the UniFi Viewport: a **Dell Wyse Thin Client**, a **R
 
    ### Enhanced (H.265 / HEVC) encoding
 
-   Cameras set to **Enhanced** encoding stream HEVC, which Firefox, and Chromium on most Raspberry Pis, cannot decode ("Unable to Stream"). On a Raspberry Pi 5, the Raspberry Pi OS Chromium (`BROWSER_BINARY=/usr/lib/chromium/chromium`) decodes HEVC in hardware; set `ENABLE_HEVC=True` in the `[Browser]` section. This needs a **Wayland** desktop session (labwc, the Raspberry Pi OS default; `sudo raspi-config` → Advanced Options → Wayland): under X11 the browser's GPU process crashes on the first HEVC frame, then drops HEVC support and every Enhanced camera shows "Your browser doesn't support Enhanced encoding". With `ENABLE_HEVC` on, Chromium is launched on Wayland automatically. After startup the log states whether the browser reports HEVC support and whether it is hardware decoded. Otherwise keep the cameras on **Standard** (H.264) encoding.
+   Cameras set to **Enhanced** encoding stream HEVC, which Firefox, and Chromium on most Raspberry Pis, cannot decode ("Unable to Stream"). On a Raspberry Pi 5, Chromium (`BROWSER_BINARY=/usr/lib/chromium/chromium`) can decode HEVC in hardware; set `ENABLE_HEVC=True` in the `[Browser]` section. This needs a **Wayland** desktop session (labwc, the Raspberry Pi OS default; `sudo raspi-config` → Advanced Options → Wayland): under X11 the browser's GPU process crashes on the first HEVC frame, then drops HEVC support and every Enhanced camera shows "Your browser doesn't support Enhanced encoding". With `ENABLE_HEVC` on, Chromium is launched on Wayland automatically. After startup the log states whether the browser reports HEVC support and whether it is hardware decoded. If it reports no HEVC support even on Wayland, install the patched Chromium below. Without HEVC support, keep the cameras on **Standard** (H.264) encoding.
+
+   #### Installing Chromium with HEVC decoding (Raspberry Pi 5)
+
+   [chromium-rpi-hevc](https://github.com/sslivins/chromium-rpi-hevc) by sslivins publishes the Raspberry Pi OS Chromium package with patches for hardware HEVC decoding (8-bit Main and 10-bit Main 10) on a Raspberry Pi 5 or CM5. The packages are built for 64-bit Raspberry Pi OS based on Debian 13 (trixie), and install Chromium to the same `/usr/lib/chromium/chromium` as the stock package.
+
+   The script controls Chromium through chromedriver, which only accepts a browser of its own major version. The releases contain no chromedriver, so the matching `chromium-driver` comes from the Raspberry Pi archive. Install the GitHub CLI and sign in first (`sudo apt install gh`, then `gh auth login`).
+
+   Download the browser packages of the latest release and the matching chromedriver:
+
+   ```bash
+   deb_dir="$(mktemp -d)"
+   gh release download --repo sslivins/chromium-rpi-hevc \
+     -p 'chromium_*.deb' -p 'chromium-common_*.deb' \
+     -p 'chromium-sandbox_*.deb' -p 'chromium-l10n_*.deb' \
+     -D "$deb_dir"
+   ver="$(dpkg-deb -f "$deb_dir"/chromium_*_arm64.deb Version)"
+   curl -fL -o "$deb_dir/chromium-driver.deb" \
+     "http://archive.raspberrypi.com/debian/pool/main/c/chromium/chromium-driver_${ver#*:}_arm64.deb"
+   ```
+
+   Optionally compare `sha256sum "$deb_dir"/*_*.deb` with the checksums in the [release notes](https://github.com/sslivins/chromium-rpi-hevc/releases) (the downloaded file names show `.` where the notes show `~`).
+
+   Install all five packages together. The patched release is usually a little older than the stock Chromium, so apt downgrades it; then hold the packages so `apt upgrade` doesn't bring back the stock build or split the browser from its driver:
+
+   ```bash
+   sudo apt install --allow-downgrades "$deb_dir"/*.deb
+   sudo apt-mark hold chromium chromium-common chromium-sandbox chromium-l10n chromium-driver
+   ```
+
+   Set `ENABLE_HEVC=True` and `BROWSER_BINARY=/usr/lib/chromium/chromium` in `config.ini`, make sure the desktop runs a Wayland session, and restart the script. The log should show `Browser supports HEVC (H.265) with hardware decoding.`
+
+   Automatic updates only update this script, not Chromium. To move to a newer chromium-rpi-hevc release, run `sudo apt-mark unhold chromium chromium-common chromium-sandbox chromium-l10n chromium-driver` and repeat the steps above. To go back to the stock Chromium, unhold the packages the same way and run `sudo apt install chromium chromium-common chromium-sandbox chromium-l10n chromium-driver`.
 
 7. **Test and Run**
 
