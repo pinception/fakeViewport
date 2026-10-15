@@ -458,7 +458,77 @@ def api_handler(*, standalone: bool = False):
         log_error("Error starting API: ", e)
         api_status("Error Starting API")
         return False
-# --------------------------------------------------------------------------- # 
+def update_handler():
+    """
+    Fast-forward to the newest commit on the git remote and restart on the new code.
+
+    Runs once at startup when ``AUTO_UPDATE`` is on. Any failure (offline,
+    local commits or edits in the way, pip errors) is logged and the current
+    code keeps running, so the live view always starts.
+    """
+    if not AUTO_UPDATE or os.environ.get("FAKEVIEWPORT_UPDATED"):
+        return
+    if not (_base / ".git").exists():
+        logging.debug("Not a git checkout; skipping update check")
+        return
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    def git(*args, timeout=30):
+        return subprocess.run(
+            ["git", "-C", str(_base), *args],
+            capture_output=True, text=True, timeout=timeout, env=env,
+        )
+    def first_line(result):
+        lines = (result.stderr or result.stdout or "").strip().splitlines()
+        return lines[0] if lines else f"exit code {result.returncode}"
+    try:
+        # Also fails on a detached HEAD
+        if git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}").returncode != 0:
+            logging.info("No upstream branch to update from; skipping update check")
+            return
+        fetch = git("fetch", "--quiet")
+        if fetch.returncode != 0:
+            logging.warning(f"Update check failed: {first_line(fetch)}")
+            return
+        behind = int(git("rev-list", "--count", "HEAD..@{u}").stdout.strip() or 0)
+        if not behind:
+            logging.info("Up to date with the git remote")
+            return
+        logging.info(f"Update available: {behind} new commit(s)")
+        api_status("Updating...")
+        # setup.sh renames config.ini.example to config.ini; restore it so an
+        # update that changes the example file isn't blocked by the "deletion"
+        if "config.ini.example" in git("ls-files", "--deleted").stdout.split() and config_file.exists():
+            git("checkout", "--", "config.ini.example")
+        old = git("rev-parse", "HEAD").stdout.strip()
+        merge = git("merge", "--ff-only", "@{u}")
+        if merge.returncode != 0:
+            logging.warning(f"Could not apply update, keeping the current version: {first_line(merge)}")
+            api_status("Update skipped")
+            return
+        if "requirements.txt" in git("diff", "--name-only", old, "HEAD").stdout.split():
+            logging.info("Installing updated requirements...")
+            try:
+                pip = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "-q", "-r", str(_base / "requirements.txt")],
+                    capture_output=True, text=True, timeout=300,
+                )
+                pip_error = first_line(pip) if pip.returncode != 0 else None
+            except (subprocess.TimeoutExpired, OSError) as e:
+                pip_error = type(e).__name__
+            if pip_error:
+                # New code may import packages that failed to install; stay on the old version
+                log_error(f"Installing requirements failed, rolling back the update: {pip_error}")
+                git("reset", "--keep", old)
+                api_status("Update rolled back")
+                return
+        new = git("rev-parse", "HEAD").stdout.strip()
+        logging.info(f"Updated {old[:7]} → {new[:7]}; restarting")
+        api_status("Updated; restarting")
+        os.environ["FAKEVIEWPORT_UPDATED"] = "1"
+        os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
+    except (subprocess.TimeoutExpired, OSError, ValueError) as e:
+        logging.warning(f"Update check failed: {type(e).__name__}")
+# --------------------------------------------------------------------------- #
 # Signal Handler (Closing gracefully with CTRL+C)
 # --------------------------------------------------------------------------- # 
 def signal_handler(signum, frame, driver=None):
@@ -2218,6 +2288,7 @@ def main():
     for name, val in vars(cfg).items():
         setattr(_mod, name, val)
     logging.info(f"===== Fake Viewport {__version__} =====")
+    update_handler()
     if API: api_handler()
     api_status("Starting...")
     # ---------------------------------------------------------------------------

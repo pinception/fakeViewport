@@ -219,6 +219,14 @@ Tired of refreshing the Unifi store only to see the Viewport out of stock? Me to
 
 ## Update
 
+### Automatic updates on startup
+
+If the script was installed with `git clone`, it checks the git remote every time it starts. When new commits are available it fast-forwards to them, installs `requirements.txt` again if that file changed, and restarts itself on the new code. The log shows `Up to date with the git remote` or `Updated <old> → <new>; restarting`.
+
+The check never keeps the live view from starting: when the machine is offline, when you have local commits that are not on the remote, or when local edits are in the way, it logs a warning and runs the current version. Set `AUTO_UPDATE=False` in the `[General]` section of `config.ini` to turn it off.
+
+### Manual updates
+
 If you're running an older version of the script, the easiest way to update is through the Dashboard. An `Update` button will appear (see <a href="#API">API</a>), read the Changelog for any possible breaking changes, and click the Update button.
 
 Note that updating through the Dashboard will also run the `minimize.sh` script and remove all the developmental/test files.

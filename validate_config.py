@@ -17,6 +17,7 @@ class AppConfig:
     WAIT_TIME: int
     MAX_RETRIES: int
     RESTART_TIMES: list[time]
+    AUTO_UPDATE: bool
     # Browser
     BROWSER_PROFILE_PATH: str
     BROWSER_BINARY: str
@@ -238,6 +239,7 @@ def validate_config(
     raw_times = config.get('General', 'RESTART_TIMES', fallback='')
     restart_times = parse_restart_times(raw_times, errors)
     hide_cursor = safe_bool(config, 'General', 'HIDE_CURSOR', True, errors)
+    auto_update = safe_bool(config, 'General', 'AUTO_UPDATE', True, errors)
     # Browser section
     user = getpass.getuser()
     default_profile = f"/home/{user}/.config/google-chrome/"
@@ -297,6 +299,7 @@ def validate_config(
         WAIT_TIME=wait_time,
         MAX_RETRIES=max_retries,
         RESTART_TIMES=restart_times,
+        AUTO_UPDATE=auto_update,
         BROWSER_PROFILE_PATH=profile_path,
         BROWSER_BINARY=binary,
         HEADLESS=headless,

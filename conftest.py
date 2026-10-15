@@ -70,6 +70,7 @@ def provide_dummy_config(tmp_path_factory):
         WAIT_TIME=30,
         MAX_RETRIES=3,
         RESTART_TIMES=[],
+        AUTO_UPDATE=False,
         # browser config
         BROWSER_PROFILE_PATH="",
         BROWSER_BINARY="",

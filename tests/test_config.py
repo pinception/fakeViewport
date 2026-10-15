@@ -394,3 +394,26 @@ def test_optional_browser_booleans(tmp_path, key, ini_overrides, expected):
                           api_dir=tmp_path / "api")
     assert cfg is not False
     assert getattr(cfg, key) is expected
+# --------------------------------------------------------------------------- #
+# AUTO_UPDATE: optional [General] boolean that defaults to True
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("value, expected", [
+    (None, True),
+    ("False", False),
+    ("true", True),
+    ("string", None),  # invalid → validation fails
+])
+def test_auto_update(tmp_path, value, expected):
+    write_base(tmp_path)
+    if value is not None:
+        ini = tmp_path / "config.ini"
+        ini.write_text(ini.read_text().replace("[General]\n", f"[General]\nAUTO_UPDATE = {value}\n", 1))
+    cfg = validate_config(strict=False,
+                          config_file=tmp_path / "config.ini",
+                          env_file=tmp_path / ".env",
+                          logs_dir=tmp_path / "logs",
+                          api_dir=tmp_path / "api")
+    if expected is None:
+        assert cfg is False
+    else:
+        assert cfg.AUTO_UPDATE is expected
