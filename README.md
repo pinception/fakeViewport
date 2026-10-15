@@ -215,15 +215,15 @@ A low-cost alternative to the UniFi Viewport: a **Dell Wyse Thin Client**, a **R
 
 ### Automatic updates on startup
 
-If the script was installed with `git clone`, it checks the git remote every time it starts. When new commits are available it fast-forwards to them, installs `requirements.txt` again if that file changed, and restarts itself on the new code. The log shows `Up to date with the git remote` or `Updated <old> → <new>; restarting`.
+If the script was installed with `git clone`, it checks the git remote every time it starts. When new commits are available it fast-forwards to them, installs `requirements.txt` again if that file changed, and restarts itself on the new code. The log shows `Up to date with the git remote`, or `Updated <old> → <new>` followed by `Restarting on the new code`.
 
 The check never keeps the live view from starting: when the machine is offline, when you have local commits that are not on the remote, or when local edits are in the way, it logs a warning and runs the current version. Set `AUTO_UPDATE=False` in the `[General]` section of `config.ini` to turn it off.
 
 ### Manual updates
 
-Open a console, or ssh into the machine, run `git pull` inside the `fakeViewport` directory and restart the script.
+With the API enabled, the Dashboard (see <a href="#API">API</a>) checks the same git remote. When new commits are waiting, the `Update` button appears; it lists the commits, links to them on GitHub, and applies them the same way as the startup update, then restarts the script. The version is shown with the number of waiting commits appended, e.g. `2.4.3.2` for two new commits.
 
-Don't use the `Update` button on the Dashboard (see <a href="#API">API</a>) with this fork. It checks the original project's releases, and it can unpack the original release over this directory, which removes the fork's changes. It also runs the `minimize.sh` script.
+You can also open a console, or ssh into the machine, run `git pull` inside the `fakeViewport` directory and restart the script.
 
 Any breaking changes will be clearly marked with a 💥 in the [changelog](CHANGELOG.md), along with instructions on how to transition from the old version.
 
@@ -407,26 +407,27 @@ These endpoints display raw data, meant to be integrated into a third party tool
 
 -- ----------------------------------------------------------------------
 -- GET /api/update
--- Description   Version comparison.
+-- Description   Installed version and the version on the git remote;
+--               "latest" ends in the number of waiting commits.
 -- Response
 -- {
 --   "status": "ok",
 --   "data": {
---     "current": "1.3.2",
---     "latest":  "1.4.0"
+--     "current": "2.4.3",
+--     "latest":  "2.4.3.2"
 --   }
 -- }
 -- ----------------------------------------------------------------------
 
 -- ----------------------------------------------------------------------
 -- GET /api/update/changelog
--- Description   Raw markdown changelog of the latest release.
+-- Description   Markdown list of the commits waiting on the git remote.
 -- Response
 -- {
 --   "status": "ok",
 --   "data": {
---     "changelog": "# 1.4.0\n\n* Added feature X\n* Fixed bug Y\n..."
---     "release_url": "https://github.com.../releases/latest"
+--     "changelog": "### 2 new commits\n\n- fix: ... (`da30dc5`)\n- feat: ... (`dbe73b6`)"
+--     "release_url": "https://github.com/pinception/fakeViewport/compare/b407d48...dbe73b6"
 --   }
 -- }
 -- ----------------------------------------------------------------------

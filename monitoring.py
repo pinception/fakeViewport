@@ -227,7 +227,7 @@ def create_app():
     @login_required
     def api_update_apply():
         """
-        Trigger a software update (git first, tar fallback).
+        Fast-forward to the newest commit on the git remote.
 
         Returns:
             flask.Response: JSON indicating the update outcome.
@@ -290,10 +290,11 @@ def create_app():
     @app.route("/api/update")
     def api_update_info():
         """
-        Return the current and latest available Fake Viewport versions.
+        Return the installed version and the version on the git remote.
 
         Returns:
-            flask.Response: ``{"current": "...", "latest": "..."}`` or error.
+            flask.Response: ``{"current": "...", "latest": "..."}`` or error;
+            ``latest`` is ``<current>.<n>`` when *n* commits are waiting.
         """
         try:
             return jsonify(status="ok", data={
@@ -308,15 +309,14 @@ def create_app():
     @app.route("/api/update/changelog")
     def api_update_changelog():
         """
-        Fetch the latest release notes and GitHub release URL.
+        List the commits waiting on the git remote and link to them.
 
         Returns:
             flask.Response: JSON with ``changelog`` and ``release_url`` keys.
         """
         try:
             changelog = update.latest_changelog()
-            # You can point directly at the “latest” redirect, or use a tag-specific URL:
-            release_url = f"https://github.com/{update.REPO}/releases/latest"
+            release_url = update.changelog_url()
             return jsonify(
                 status="ok",
                 data={

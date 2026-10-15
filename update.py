@@ -1,23 +1,20 @@
 #!/usr/bin/venv python3
-import subprocess, io, tarfile, logging, sys, json, os, base64
+import subprocess, logging, sys, re, html, threading
 from logging_config import configure_logging
 from validate_config import validate_config
 from pathlib import Path
-from urllib.request import urlopen
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError
 from datetime import datetime, timedelta
+import viewport
 from viewport import log_error
 
-CACHE_DURATION = timedelta(hours=1)
-REPO  = "Samuel1698/fakeViewport"
+# git fetch is cheap and has no API rate limit, so the remote is checked often
+CACHE_DURATION = timedelta(minutes=15)
+MAX_CHANGELOG_COMMITS = 50
 ROOT  = Path(__file__).resolve().parent
-GIT   = ["git", "-C", str(ROOT)]
 VERS  = ROOT / "api" / "VERSION"
 _mon = sys.modules[__name__]
-last_release_fetched: datetime | None = None
-cached_release_data: dict | None = None
-
+_fetch_lock = threading.Lock()
+last_fetched: datetime | None = None
 # --------------------------------------------------------------------------- # 
 # Config set up
 # --------------------------------------------------------------------------- # 
@@ -40,178 +37,44 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------- # 
 # Helper functions
 # --------------------------------------------------------------------------- # 
-def _github(url: str, *, accept="application/vnd.github+json"):
+def _commits_behind(force: bool = False) -> int | None:
     """
-    Open a GitHub API endpoint with automatic token and rate-limit handling.
+    Count the commits this install is behind its git remote.
+
+    Fetches at most once per ``CACHE_DURATION`` (always with *force*); in
+    between, the count is recomputed against the last fetch, so it is right
+    again as soon as the install updates itself.
 
     Args:
-        url: Full HTTPS URL of the GitHub REST endpoint.
-        accept: Value for the ``Accept`` request header.
+        force: Fetch even if the last fetch is recent.
 
     Returns:
-        http.client.HTTPResponse: An open response object ready for
-        ``.read()`` / JSON decoding.
-
-    Raises:
-        urllib.error.HTTPError: Propagates 4xx/5xx errors after logging.
-        Exception: Any other network-related exception.
+        int | None: Commits behind, or None if that is unknown.
     """
-    hdr = {"Accept": accept}
-    # Always use token if available
-    if (tok := os.getenv("GITHUB_TOKEN")):
-        hdr["Authorization"] = f"Bearer {tok}"
-    req = Request(url, headers=hdr)
-    try:
-        return urlopen(req, timeout=30)
-    except HTTPError as e:
-        logging.error("HTTP Error %s", e.code)
-        if e.code == 403 and 'rate limit' in str(e):
-            remaining = e.headers.get('X-RateLimit-Remaining', '?')
-            log_error(f"GitHub rate limit exceeded (remaining: {remaining})")
-        elif e.code == 403:
-            log_error("Server Failed to Authenticate")
-        raise
-    
-def _clean_worktree() -> bool:
-    """
-    Check whether the local Git work-tree is clean.
+    global last_fetched
+    # The dashboard asks for the version and the changelog at the same time;
+    # one git fetch at a time avoids ref lock errors
+    with _fetch_lock:
+        now = datetime.now()
+        fetch = force or last_fetched is None or now - last_fetched >= CACHE_DURATION
+        behind = viewport.git_updates_available(fetch=fetch)
+        if fetch and behind is not None:
+            last_fetched = now
+        return behind
 
-    Returns:
-        bool: ``True`` if ``git status --porcelain`` is empty, else
-        ``False``.
+def _web_url(remote_url: str) -> str:
     """
-    return subprocess.check_output(GIT + ["status", "--porcelain"], text=True).strip() == ""
-
-def _current_branch() -> str | None:
-    """
-    Get the name of the currently checked-out branch.
-
-    Returns:
-        string | None: Branch name, or ``None`` if HEAD is detached.
-    """
-    try:
-        return subprocess.check_output(
-            GIT + ["symbolic-ref", "--quiet", "--short", "HEAD"],
-            text=True,
-        ).strip()
-    except subprocess.CalledProcessError:
-        return None
-
-def _default_branch() -> str:
-    """
-    Resolve the repository's default branch.
-
-    Attempts ``git symbolic-ref`` first, then falls back to the GitHub
-    API, and finally ``"main"`` if all else fails.
-
-    Returns:
-        string: The default branch name.
-    """
-    try:
-        ref = subprocess.check_output(
-            GIT + ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
-            text=True,
-        ).strip()             # -> "origin/main"
-        return ref.split("/", 1)[1]
-    except subprocess.CalledProcessError:
-        try:
-            with _github(f"https://api.github.com/repos/{REPO}") as r:
-                return json.load(r)["default_branch"]
-        except Exception:
-            return "main"
-# --------------------------------------------------------------------------- # 
-# Strategies
-# --------------------------------------------------------------------------- # 
-def update_via_git(tag: str) -> bool:
-    """
-    Fast-forward the local repo to *tag* and run ``minimize.sh``.
-
-    The strategy is skipped if uncommitted changes exist.
+    Turn a git remote URL into its web page, dropping any credentials.
 
     Args:
-        tag: Release tag without the leading ``"v"`` (e.g., ``"2.3.6"``).
+        remote_url: e.g. ``https://github.com/owner/repo.git`` or
+            ``git@github.com:owner/repo.git``.
 
     Returns:
-        bool: ``True`` on success, ``False`` if any Git step fails.
+        string: e.g. ``https://github.com/owner/repo``, or ``""``.
     """
-    logging.info("Attempting to update via git")
-    env = os.environ.copy()
-    if (tok := os.getenv("GITHUB_TOKEN")):
-        b64 = base64.b64encode(f"x-access-token:{tok}".encode()).decode()
-        env.update({
-            "GIT_TERMINAL_PROMPT": "0",
-            "GIT_CONFIG_COUNT": "1",
-            "GIT_CONFIG_KEY_0": "http.extraHeader",
-            "GIT_CONFIG_VALUE_0": f"Authorization: Basic {b64}",
-        })
-
-    branch = _current_branch() or _default_branch()
-    steps = [
-        GIT + ["checkout", branch],                     # leave detached-HEAD if needed
-        GIT + ["fetch", "--tags", "--force", "--prune"],
-        GIT + ["pull", "--ff-only", "origin", branch],  # ordinary pull
-        ["bash", str(ROOT / "minimize.sh"), "--force"], # run minimizer
-    ]
-    for step in steps:
-        try:
-            logging.info("Executing: %s", " ".join(step))
-            subprocess.check_output(step, stderr=subprocess.STDOUT, text=True, env=env)
-        except subprocess.CalledProcessError as e:
-            log_error("git failed: %s", e)
-            return False
-
-    return True
-
-def _download_asset(tag: str, keyword: str) -> bytes | None:
-    """
-    Download a release asset whose name contains *keyword*.
-
-    Args:
-        tag: Release tag without the leading ``"v"``.
-        keyword: Case-insensitive substring to match the asset name.
-
-    Returns:
-        bytes | None: Asset content, or ``None`` if not found.
-    """
-    try:
-        with _github(f"https://api.github.com/repos/{REPO}/releases/tags/v{tag}") as r:
-            data = json.load(r)
-        for asset in data.get("assets", []):
-            if keyword.lower() in asset["name"].lower():
-                with _github(asset["url"], accept="application/octet-stream") as a:
-                    return a.read()
-        return None
-    except HTTPError as e:
-        log_error("Failed to download assets")
-        logging.warning("Wait a few minutes before attempting to update again")
-
-def update_via_tar(tag: str) -> bool:
-    """
-    Update files by extracting the “minimal” tarball for *tag*.
-
-    Args:
-        tag: Release tag without the leading ``"v"``.
-
-    Returns:
-        bool: ``True`` if extraction succeeds, ``False`` otherwise.
-    """
-    logging.info("Attempting to update via tar")
-    try:
-        blob = _download_asset(tag, "minimal")
-        if blob is None:
-            logging.error("no 'minimal' asset found for v%s", tag)
-            return False
-
-        with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tf:
-            members = []
-            for m in tf.getmembers():
-                if "/" in m.name: m.name = m.name.split("/", 1)[1]
-                if m.name: members.append(m)
-            tf.extractall(ROOT, members=members)  
-        return True
-    except Exception as exc:
-        log_error("tar update failed: %s", exc)
-        return False
+    m = re.match(r"^(?:[a-z+]+://)?(?:[^@/]+@)?([^/:]+)[:/](.+?)(?:\.git)?/?$", remote_url.strip())
+    return f"https://{m.group(1)}/{m.group(2)}" if m else ""
 # --------------------------------------------------------------------------- # 
 # API
 # --------------------------------------------------------------------------- # 
@@ -225,134 +88,96 @@ def current_version() -> str:
     """
     return VERS.read_text().strip()
 
-def _get_release_data() -> dict:
-    """
-    Retrieve (and cache) the GitHub JSON for the latest release.
-
-    Returns:
-        dict: Raw JSON representing the latest release.
-
-    Raises:
-        urllib.error.HTTPError: Propagates 4xx/5xx errors.
-        Exception: Any other network or parsing exception.
-    """
-    global last_release_fetched, cached_release_data
-
-    now = datetime.now()
-    if (
-        cached_release_data is not None
-        and last_release_fetched is not None
-        and (now - last_release_fetched) < CACHE_DURATION
-    ):  
-        return cached_release_data
-    url = f"https://api.github.com/repos/{REPO}/releases/latest"
-    try:
-        with _github(url) as resp:
-            data = json.load(resp)
-            cached_release_data = data
-            last_release_fetched = now
-            return data
-
-    except HTTPError as e:
-        # Log rate-limit (403 with “rate limit” in message) differently from other HTTP errors
-        if e.code == 403 and "rate limit" in str(e).lower():
-            remaining = e.headers.get("X-RateLimit-Remaining", "?")
-            logging.warning(f"GitHub rate limit exceeded (remaining: {remaining})")
-        else:
-            logging.warning(f"HTTPError: {e}")
-        raise
-
-    except Exception as e:
-        # Any other exception (network down, JSON parse error, etc.) – re-raise so callers know
-        raise
-
 def latest_version() -> str:
     """
-    Return the tag of the latest GitHub release.
+    Return the version available on the git remote.
+
+    The dashboard compares dotted numbers, so new commits on the remote are
+    reported as an extra component: ``2.4.3.2`` means two new commits.
 
     Returns:
-        string: Tag without the leading ``"v"``, or ``"failed-to-fetch"``
-        if the lookup fails.
+        string: The current version when up to date, ``<current>.<commits>``
+        when behind, or ``"failed-to-fetch"`` if the remote can't be checked.
     """
-    global cached_release_data, last_release_fetched
-    now = datetime.now()
-    try:
-        data = _get_release_data()
-        return data["tag_name"].lstrip("v")
-    except HTTPError:
-        # If cache exists and is still fresh, return cached tag_name
-        if (
-            cached_release_data is not None
-            and last_release_fetched is not None
-            and (now - last_release_fetched) < CACHE_DURATION
-        ):
-            return cached_release_data["tag_name"].lstrip("v")
+    behind = _commits_behind()
+    if behind is None:
         return "failed-to-fetch"
-    except Exception:
-        return "failed-to-fetch"
+    cur = current_version()
+    return f"{cur}.{behind}" if behind else cur
 
 def latest_changelog() -> str:
     """
-    Return the latest release notes, truncated at the first ``---`` line.
+    List the commits waiting on the git remote as Markdown.
 
     Returns:
-        string: Release body or an empty string if it cannot be fetched.
+        string: A heading and one bullet per commit, or ``""`` if the remote
+        can't be checked.
     """
-    global cached_release_data, last_release_fetched
-    now = datetime.now()
+    behind = _commits_behind()
+    if behind is None:
+        return ""
+    if not behind:
+        return "Up to date with the git remote."
     try:
-        data = _get_release_data()
-        raw_body = data.get("body", "") or ""
-        # Split on the first "\n---" (or just '---') and strip trailing whitespace/newlines
-        return raw_body.split("\n---", 1)[0].rstrip("\n")
-    except HTTPError:
-        # If cache exists and is still fresh, return truncated cached body
-        if (
-            cached_release_data is not None
-            and last_release_fetched is not None
-            and (now - last_release_fetched) < CACHE_DURATION
-        ):
-            cached_body = cached_release_data.get("body", "") or ""
-            return cached_body.split("\n---", 1)[0].rstrip("\n")
+        log = viewport.run_git(
+            "log", f"--max-count={MAX_CHANGELOG_COMMITS}", "--format=%h%x09%s", "HEAD..@{u}"
+        ).stdout
+    except (subprocess.TimeoutExpired, OSError):
         return ""
-    except Exception:
+    lines = []
+    for entry in log.splitlines():
+        sha, _, subject = entry.partition("\t")
+        # The dashboard renders this as HTML
+        lines.append(f"- {html.escape(subject)} (`{sha}`)")
+    more = behind - len(lines)
+    if more > 0:
+        lines.append(f"- … and {more} more")
+    return f"### {behind} new commit{'s' if behind != 1 else ''}\n\n" + "\n".join(lines)
+
+def changelog_url() -> str:
+    """
+    Link to the waiting commits on the remote's web page.
+
+    Returns:
+        string: A compare view when behind, the branch's commit list when up
+        to date, or ``""`` if the remote URL is unknown.
+    """
+    try:
+        upstream = viewport.run_git("rev-parse", "--abbrev-ref", "@{u}").stdout.strip()
+        remote, _, branch = upstream.partition("/")
+        web = _web_url(viewport.run_git("remote", "get-url", remote).stdout) if branch else ""
+        if not web:
+            return ""
+        if _commits_behind():
+            head = viewport.run_git("rev-parse", "--short", "HEAD").stdout.strip()
+            new = viewport.run_git("rev-parse", "--short", "@{u}").stdout.strip()
+            return f"{web}/compare/{head}...{new}"
+        return f"{web}/commits/{branch}"
+    except (subprocess.TimeoutExpired, OSError):
         return ""
-    
+
 def perform_update() -> str:
     """
-    Update the installation to the newest release using Git or tarball.
+    Fast-forward the install to the newest commit on its git remote.
 
-    The function tries Git first (when possible) and falls back to the
-    tarball strategy, logging the outcome.
+    Uses the same steps as the startup update (``viewport.apply_git_update``):
+    no release archives are extracted, so changes that only exist on the
+    remote (e.g. a fork) are never overwritten.
 
     Returns:
-        string: Outcome label, e.g. ``"already-current"``,
-        ``"updated-to-2.3.6-via-git"``, or ``"update-failed"``.
+        string: Outcome label: ``"already-current"``,
+        ``"updated-to-<commit>-via-git"`` or ``"update-failed"``.
     """
-    cur, new = current_version(), latest_version()
-    logging.info(f"Attempting update to v{new}")
-    # already current
-    if cur == new:
-        outcome = "already-current"
-        logging.info(f"Viewport v{cur} is the latest version")
-        return outcome
-
-    # git path 
-    tried_git = False
-    if (ROOT / ".git").exists() and _clean_worktree():
-        tried_git = True
-        if update_via_git(new):
-            outcome = f"updated-to-{new}-via-git"
-            logging.info(f"Successfully updated to v{new} via git")
-            return outcome
-    else: logging.warning("Local changes detected  or not a git repository - skipping git strategy")
-    # tarball path 
-    if update_via_tar(new):
-        outcome = f"updated-to-{new}-via-tar" + (" (git failed)" if tried_git else "")
-        logging.info(f"Successfully updated to v{new} via tarbal")
-        return outcome
-
-    # failure
-    outcome = "update-failed"
-    log_error("Failed to apply update")
-    return outcome
+    behind = _commits_behind(force=True)
+    if behind is None:
+        log_error("Update failed: could not check the git remote")
+        return "update-failed"
+    if not behind:
+        logging.info("Already up to date with the git remote")
+        return "already-current"
+    logging.info(f"Updating {behind} commit(s) from the git remote")
+    new = viewport.apply_git_update()
+    if new is None:
+        log_error("Failed to apply update")
+        return "update-failed"
+    return f"updated-to-{new[:7]}-via-git"
