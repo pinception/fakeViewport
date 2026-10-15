@@ -2,7 +2,9 @@
 # Ubiquiti renames these classes between Protect releases. Keep old values in
 # the lists so the script keeps working on consoles that have not updated yet.
 CSS_FULLSCREEN_PARENT = "div[class*='LiveviewControls__ButtonGroup']"
-CSS_FULLSCREEN_BUTTON = ":nth-child(2) > button"
+# Searched inside CSS_FULLSCREEN_PARENT. Protect 7.3+ makes the button itself the
+# group's 2nd child; older releases wrapped it in a 2nd-child element.
+CSS_FULLSCREEN_BUTTON = ":scope > button:nth-child(2), :nth-child(2) > button"
 CSS_LOADING_DOTS = "div[class*='TimedDotsLoader']"
 # Live view grid wrapper. Any match means the live view is rendered.
 CSS_LIVEVIEW_WRAPPER = [
