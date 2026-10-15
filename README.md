@@ -1,14 +1,8 @@
 # Fake Viewport
 
-<!-- [START BADGES] -->
+> This is a fork of [Samuel1698/fakeViewport](https://github.com/Samuel1698/fakeViewport), maintained at [pinception/fakeViewport](https://github.com/pinception/fakeViewport). It adds Raspberry Pi (ARM) support, Enhanced (HEVC) camera playback, touch screen options, the UniFi Protect 7.3 fullscreen button and automatic updates on startup. Many thanks to Samuel G. Muñoz for creating the original project; see [Credits](#credits).
 
-[![Python](https://github.com/Samuel1698/fakeViewport/actions/workflows/python-test.yml/badge.svg)](https://github.com/Samuel1698/fakeViewport/actions/workflows/python-test.yml)
-[![CodeQL](https://github.com/Samuel1698/fakeViewport/actions/workflows/codeql.yml/badge.svg)](https://github.com/Samuel1698/fakeViewport/actions/workflows/codeql.yml)
-[![codecov](https://codecov.io/github/Samuel1698/fakeViewport/graph/badge.svg?token=mPKJSAYXH5)](https://codecov.io/github/Samuel1698/fakeViewport)
-
-<!-- [END BADGES] -->
-
-Tired of refreshing the Unifi store only to see the Viewport out of stock? Me too. So I created a $30 alternative using a **Dell Wyse Thin Client** and this script. The script will automatically and remotely launch the Protect Live View of your choosing, handle login if the session expires, recover from temporary connection issues, and resolve random webpage hiccups.
+A low-cost alternative to the UniFi Viewport: a **Dell Wyse Thin Client**, a **Raspberry Pi** or any small Linux machine running this script. The script will automatically and remotely launch the Protect Live View of your choosing, handle login if the session expires, recover from temporary connection issues, and resolve random webpage hiccups.
 
 <!-- markdownlint-disable no-inline-html -->
 <table><tr>
@@ -16,7 +10,7 @@ Tired of refreshing the Unifi store only to see the Viewport out of stock? Me to
 <td><a href="#Installation">🗃️ Download</a></td>
 <td><a href="#usage">❓ How To Use</a></td>
 <td><a href="#why">💭 Why Choose This?</a></td>
-<td><a href="https://github.com/Samuel1698/fakeViewport/releases">🎉 Latest Release</a></td>
+<td><a href="https://github.com/pinception/fakeViewport/commits/main">🎉 Latest Changes</a></td>
 </tr><tr>
 <td><a href="#API">🌐 API</a></td>
 <td><a href="CHANGELOG.md">📋 Changelog</a></td>
@@ -63,16 +57,16 @@ Tired of refreshing the Unifi store only to see the Viewport out of stock? Me to
 
 1. **Clone the Repository**  
 
-   Clone the repo or download your chosen `tar.gz` file from the [latest release](https://github.com/Samuel1698/fakeViewport/releases).
+   Clone this fork:
 
    ```bash
-   git clone https://github.com/Samuel1698/fakeViewport.git
+   git clone https://github.com/pinception/fakeViewport.git
    cd fakeViewport
    ```
 
 2. **Optional: Minimize the directory**
 
-   If you cloned the repository or got the `full` version of the `tar.gz` file, you can save space and de-clutter the directory by running the `minimize.sh` script. It will remove all test and development files, `.md` files, and github specific files while leaving the script fully functional.
+   You can save space and de-clutter the directory by running the `minimize.sh` script. It will remove all test and development files, `.md` files, and github specific files while leaving the script fully functional. Skip this step if you want [automatic updates](#Update): deleting tracked files usually blocks them.
 
    ```bash
    ./minimize.sh
@@ -227,13 +221,11 @@ The check never keeps the live view from starting: when the machine is offline, 
 
 ### Manual updates
 
-If you're running an older version of the script, the easiest way to update is through the Dashboard. An `Update` button will appear (see <a href="#API">API</a>), read the Changelog for any possible breaking changes, and click the Update button.
+Open a console, or ssh into the machine, run `git pull` inside the `fakeViewport` directory and restart the script.
 
-Note that updating through the Dashboard will also run the `minimize.sh` script and remove all the developmental/test files.
+Don't use the `Update` button on the Dashboard (see <a href="#API">API</a>) with this fork. It checks the original project's releases, and it can unpack the original release over this directory, which removes the fork's changes. It also runs the `minimize.sh` script.
 
-Updating manually takes opening a console, or using ssh to the machine and running `git pull` inside the `fakeViewport` directory. If you downloaded a release manually, you can grab the latest version and unzip it over your current directory.
-
-Any breaking changes will be clearly marked with a 💥 in the release notes and changelog, along with instructions on how to transition from the old version.
+Any breaking changes will be clearly marked with a 💥 in the [changelog](CHANGELOG.md), along with instructions on how to transition from the old version.
 
 ---
 
@@ -492,7 +484,7 @@ Because this script simply displays the live view on a webpage, it has several a
 
 <img width="550" alt="Full Setup" src="https://github.com/user-attachments/assets/fc5dc452-bed7-4399-9604-538c25436fa5" />
 
-<sup>Setup at my parent's house—blurred for privacy</sup>
+<sup>The original author's setup—blurred for privacy</sup>
 
 <img width="678" alt="Login Page" src="https://github.com/user-attachments/assets/149bd036-1bbc-4ceb-9e4f-204e66471859" />
 
@@ -523,3 +515,7 @@ Because this script simply displays the live view on a webpage, it has several a
 - If you use the machine for things other than just a viewport display, make sure you do your other internet browsing in a different browser than the script uses. The browser window it launches is very limited and stripped of functionality (for better resource management), and the script will kill all other instances of the same browser when resurrecting itself.
 
 ---
+
+## Credits
+
+Fake Viewport was created by **Samuel G. Muñoz** ([Samuel1698](https://github.com/Samuel1698)), and this fork is built on [his original project](https://github.com/Samuel1698/fakeViewport). Thank you for building it, sharing it under the MIT License and maintaining it for so long. The original copyright notice is kept in [LICENSE](LICENSE).
