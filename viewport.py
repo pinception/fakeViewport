@@ -1,5 +1,5 @@
 #!/usr/bin/venv python3
-import os, psutil, sys, time, argparse, signal, subprocess
+import os, psutil, sys, time, argparse, signal, subprocess, platform
 import math, threading, logging, concurrent.futures, shutil, re
 from logging_config                      import configure_logging
 from validate_config                     import validate_config
@@ -652,7 +652,8 @@ def get_driver_path(browser: str, timeout: int = 60) -> str:
     Return a WebDriver path, preferring an already-cached driver to avoid
     re-extraction (which can hit ETXTBUSY if a running process has the file mapped).
     Falls back to download with a timeout; on timeout or extraction errors,
-    use the newest cached driver if available.
+    use the newest cached driver if available. On non-x86-64 CPUs, Chrome and
+    Chromium use the system chromedriver (``chromium-driver`` package) instead.
 
     Args:
         browser: "chrome", "chromium", or "firefox".
@@ -672,6 +673,19 @@ def get_driver_path(browser: str, timeout: int = 60) -> str:
 
     # Pick the right manager
     if browser in ("chrome", "chromium"):
+        # webdriver_manager only fetches the x86-64 "linux64" chromedriver, which fails
+        # with "Exec format error" on ARM (Raspberry Pi). Use the distro build there.
+        if platform.machine().lower() not in ("x86_64", "amd64"):
+            system_driver = shutil.which("chromedriver")
+            if system_driver:
+                return system_driver
+            msg = (
+                f"No chromedriver for this CPU ({platform.machine()}); "
+                "install it with: sudo apt install chromium-driver"
+            )
+            log_error(msg)
+            api_status("chromedriver missing; install chromium-driver")
+            raise DriverDownloadStuckError(msg)
         is_chromium = "chromium" in BROWSER_BINARY.lower()
         mgr = ChromeDriverManager(
             chrome_type=ChromeType.CHROMIUM if is_chromium else ChromeType.GOOGLE

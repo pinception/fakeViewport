@@ -48,6 +48,11 @@ def mock_common(mocker):
         "logging": mocker.patch("viewport.logging"),
     }
     return patches
+
+@pytest.fixture(autouse=True)
+def x86_64_host(monkeypatch):
+    """Behave like an x86-64 host, so chromedriver comes from webdriver_manager even on a Pi."""
+    monkeypatch.setattr(viewport.platform, "machine", lambda: "x86_64")
 # --------------------------------------------------------------------------- #
 # Tests for get_cpu_color and get_mem_color
 # --------------------------------------------------------------------------- #
@@ -202,6 +207,32 @@ def test_get_driver_path_firefox_success(monkeypatch):
     monkeypatch.setattr(viewport, "GeckoDriverManager", lambda *_, **__: DummyMgr())
     path = viewport.get_driver_path("firefox", timeout=1)
     assert path == "/fake/driver/path"
+# --------------------------------------------------------------------------- #
+# get_driver_path  – ARM uses the system chromedriver
+# --------------------------------------------------------------------------- #
+def _no_chrome_manager(*_, **__):
+    pytest.fail("webdriver_manager only has x86-64 chromedrivers; must not be used on ARM")
+
+@pytest.mark.parametrize("browser", ["chrome", "chromium"])
+def test_get_driver_path_arm_uses_system_chromedriver(monkeypatch, browser):
+    monkeypatch.setattr(viewport.platform, "machine", lambda: "aarch64")
+    monkeypatch.setattr(viewport.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(viewport, "ChromeDriverManager", _no_chrome_manager)
+    assert viewport.get_driver_path(browser, timeout=1) == "/usr/bin/chromedriver"
+
+def test_get_driver_path_arm_without_system_chromedriver(monkeypatch):
+    monkeypatch.setattr(viewport.platform, "machine", lambda: "aarch64")
+    monkeypatch.setattr(viewport.shutil, "which", lambda name: None)
+    monkeypatch.setattr(viewport, "ChromeDriverManager", _no_chrome_manager)
+    with pytest.raises(viewport.DriverDownloadStuckError, match="sudo apt install chromium-driver"):
+        viewport.get_driver_path("chromium", timeout=1)
+    viewport.api_status.assert_called_once_with("chromedriver missing; install chromium-driver")
+
+def test_get_driver_path_arm_firefox_uses_manager(monkeypatch):
+    monkeypatch.setattr(viewport.platform, "machine", lambda: "aarch64")
+    _patch_cleaner(monkeypatch)
+    monkeypatch.setattr(viewport, "GeckoDriverManager", lambda *_, **__: DummyMgr())
+    assert viewport.get_driver_path("firefox", timeout=1) == "/fake/driver/path"
 # --------------------------------------------------------------------------- #
 # get_driver_path  – timeout branch
 # --------------------------------------------------------------------------- #

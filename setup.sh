@@ -111,6 +111,11 @@ fi
 if command -v chromium &> /dev/null; then
     echo -e "${GREEN}✓ Chromium is installed${NC}"
     any_browser_installed=true
+    # Official chromedrivers are x86-64 only; ARM (Raspberry Pi) needs the distro one
+    if [ "$(uname -m)" != "x86_64" ] && ! command -v chromedriver &> /dev/null; then
+        echo -e "${YELLOW}chromedriver not found. Install it with:${NC}"
+        echo -e "${CYAN}    sudo apt install -y chromium-driver${NC}"
+    fi
 fi
 
 if command -v firefox &> /dev/null; then

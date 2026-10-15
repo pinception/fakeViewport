@@ -53,6 +53,7 @@ Tired of refreshing the Unifi store only to see the Viewport out of stock? Me to
 
 - Debian-based Linux.
 - Firefox, Chrome, or Chromium.
+  - On a Raspberry Pi or other ARM device, Chromium also needs `chromium-driver` (`sudo apt install chromium-driver`).
 - Python 3.
 - (Optional) SSH for remote access.
 
